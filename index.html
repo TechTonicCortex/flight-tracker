@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlightWatch — Live Tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+:root {
+  --bg:      #080c14;
+  --surface: #0d1220;
+  --surface2:#111827;
+  --border:  rgba(99,179,237,0.12);
+  --accent:  #63b3ed;
+  --accent2: #90cdf4;
+  --green:   #68d391;
+  --yellow:  #f6e05e;
+  --red:     #fc8181;
+  --text:    #e2ecf8;
+  --dim:     #4a6785;
+  --r:       12px;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'IBM Plex Sans', sans-serif;
+  height: 100vh;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  grid-template-rows: 100vh;
+}
+
+/* ── SIDEBAR ── */
+.sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 10;
+}
+
+.sidebar-header {
+  padding: 22px 22px 18px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(99,179,237,0.03);
+}
+
+.logo-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.logo-icon {
+  font-size: 20px;
+  filter: drop-shadow(0 0 8px rgba(99,179,237,0.5));
+}
+
+.logo-text {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 2px;
+}
+
+.logo-text span { color: var(--text); }
+
+.tagline {
+  font-size: 11px;
+  color: var(--dim);
+  letter-spacing: 1px;
+}
+
+/* Search */
+.search-section { padding: 18px 22px; border-bottom: 1px solid var(--border); }
+
+.search-label {
+  font-size: 9px;
+  letter-spacing: 3px;
+  color: var(--dim);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  font-weight: 500;
+}
+
+.search-row { display: flex; gap: 8px; }
+
+.search-input {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 11px 14px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  outline: none;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  transition: border-color 0.2s;
+}
+
+.search-input::placeholder { color: var(--dim); letter-spacing: 1px; font-size: 12px; }
+.search-input:focus { border-color: var(--accent); }
+
+.search-btn {
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  padding: 11px 16px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: #000;
+  cursor: pointer;
+  transition: all 0.2s;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+.search-btn:hover { opacity: 0.85; transform: translateY(-1px); }
+.search-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+.examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.ex-chip {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 4px 11px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: var(--dim);
+  cursor: pointer;
+  transition: all 0.15s;
+  letter-spacing: 1px;
+}
+
+.ex-chip:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Flight info */
+.flight-info { flex: 1; overflow-y: auto; padding: 0; }
+.flight-info::-webkit-scrollbar { width: 3px; }
+.flight-info::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* Status card */
+.status-card {
+  margin: 16px 22px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 18px;
+  position: relative;
+  overflow: hidden;
+}
+
+.status-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--green);
+  border-radius: var(--r) var(--r) 0 0;
+}
+
+.status-card.landed::before { background: var(--dim); }
+.status-card.delayed::before { background: var(--yellow); }
+.status-card.cancelled::before { background: var(--red); }
+
+.flight-number {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 2px;
+  margin-bottom: 4px;
+}
+
+.airline-name {
+  font-size: 12px;
+  color: var(--dim);
+  margin-bottom: 14px;
+  font-weight: 500;
+}
+
+.route-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.airport-block { flex: 1; }
+.airport-code {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.airport-name { font-size: 10px; color: var(--dim); margin-top: 2px; }
+.airport-time { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--accent2); margin-top: 4px; }
+
+.route-line {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.route-dots {
+  width: 100%;
+  height: 2px;
+  background: var(--border);
+  border-radius: 1px;
+  position: relative;
+}
+
+.route-plane {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 16px;
+  filter: drop-shadow(0 0 6px rgba(99,179,237,0.6));
+  transition: left 1s ease;
+}
+
+.route-duration { font-size: 10px; color: var(--dim); letter-spacing: 1px; }
+
+/* Progress bar */
+.progress-section { margin: 0 22px 14px; }
+
+.prog-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--dim);
+  margin-bottom: 6px;
+  font-family: 'IBM Plex Mono', monospace;
+  letter-spacing: 1px;
+}
+
+.prog-track {
+  height: 5px;
+  background: var(--surface2);
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.prog-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--green));
+  border-radius: 3px;
+  transition: width 1s ease;
+}
+
+/* Stats grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0 22px 14px;
+}
+
+.stat-box {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.stat-label { font-size: 9px; color: var(--dim); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 5px; font-weight: 600; }
+.stat-value { font-family: 'IBM Plex Mono', monospace; font-size: 16px; font-weight: 700; color: var(--text); }
+.stat-unit  { font-size: 10px; color: var(--dim); margin-left: 3px; }
+
+/* Live badge */
+.live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(104,211,145,0.1);
+  border: 1px solid rgba(104,211,145,0.3);
+  border-radius: 20px;
+  padding: 3px 10px;
+  font-size: 10px;
+  color: var(--green);
+  font-family: 'IBM Plex Mono', monospace;
+  letter-spacing: 1px;
+  margin: 0 22px 14px;
+}
+
+.live-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse { 50% { opacity: 0.3; transform: scale(0.8); } }
+
+/* Position info */
+.pos-section {
+  margin: 0 22px 14px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.pos-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(99,179,237,0.06);
+  font-size: 12px;
+}
+
+.pos-row:last-child { border: none; }
+.pos-key { color: var(--dim); font-weight: 500; }
+.pos-val { font-family: 'IBM Plex Mono', monospace; color: var(--accent2); }
+
+/* Empty / loading states */
+.state-msg {
+  padding: 40px 22px;
+  text-align: center;
+  color: var(--dim);
+}
+
+.state-icon { font-size: 36px; margin-bottom: 12px; }
+.state-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+.state-sub { font-size: 12px; line-height: 1.6; }
+
+/* Update time */
+.update-row {
+  padding: 12px 22px;
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+  color: var(--dim);
+  font-family: 'IBM Plex Mono', monospace;
+  display: flex;
+  justify-content: space-between;
+}
+
+/* ── MAP ── */
+#map {
+  width: 100%;
+  height: 100%;
+  filter: brightness(0.85) contrast(1.1) saturate(0.8);
+}
+
+/* Leaflet dark override */
+.leaflet-tile { filter: invert(1) hue-rotate(180deg) brightness(0.8) saturate(0.6); }
+.leaflet-container { background: #0a0e18; }
+
+/* Custom plane marker */
+.plane-icon { font-size: 22px; filter: drop-shadow(0 0 8px rgba(99,179,237,0.8)); }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+  <div class="sidebar-header">
+    <div class="logo-row">
+      <span class="logo-icon">✈️</span>
+      <div class="logo-text">FLIGHT<span>WATCH</span></div>
+    </div>
+    <div class="tagline">LIVE AIRCRAFT TRACKING · OPENSKY NETWORK</div>
+  </div>
+
+  <div class="search-section">
+    <div class="search-label">Search Flight or Callsign</div>
+    <div class="search-row">
+      <input class="search-input" id="flightInput" type="text" placeholder="e.g. AC123, UAL456" maxlength="8">
+      <button class="search-btn" id="searchBtn" onclick="searchFlight()">TRACK</button>
+    </div>
+    <div class="examples">
+      <span class="ex-chip" onclick="fillExample('ACA855')">ACA855</span>
+      <span class="ex-chip" onclick="fillExample('UAL890')">UAL890</span>
+      <span class="ex-chip" onclick="fillExample('DAL100')">DAL100</span>
+      <span class="ex-chip" onclick="fillExample('BAW172')">BAW172</span>
+      <span class="ex-chip" onclick="fillExample('AFR83')">AFR83</span>
+    </div>
+  </div>
+
+  <div class="flight-info" id="flightInfo">
+    <div class="state-msg">
+      <div class="state-icon">🛫</div>
+      <div class="state-title">Track any flight live</div>
+      <div class="state-sub">Enter a flight number or callsign above.<br>Uses OpenSky Network — no API key needed.<br><br>Try the example chips above to get started.</div>
+    </div>
+  </div>
+
+  <div class="update-row">
+    <span id="updateTime">—</span>
+    <span>REFRESHES EVERY 15s</span>
+  </div>
+</div>
+
+<!-- MAP -->
+<div id="map"></div>
+
+<script>
+// ── MAP INIT ──────────────────────────────────────────────────────
+const map = L.map('map', { center:[40, -30], zoom:4, zoomControl:true, attributionControl:false });
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+let planeMarker = null;
+let routeLine   = null;
+let trailLine   = null;
+let trailPoints = [];
+let currentCallsign = null;
+let refreshTimer = null;
+
+// ── HELPERS ───────────────────────────────────────────────────────
+function fillExample(val) {
+  document.getElementById('flightInput').value = val;
+  searchFlight();
+}
+
+function degToCompass(deg) {
+  const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  return dirs[Math.round(deg/22.5) % 16];
+}
+
+function msToKmh(ms) { return Math.round(ms * 3.6); }
+function mToFt(m)    { return Math.round(m * 3.281); }
+function mToKm(m)    { return (m/1000).toFixed(0); }
+
+function formatCoord(val, pos, neg) {
+  if (val === null) return '—';
+  return Math.abs(val).toFixed(4) + '° ' + (val >= 0 ? pos : neg);
+}
+
+// ── PLANE ICON ────────────────────────────────────────────────────
+function planeIcon(heading) {
+  return L.divIcon({
+    html: `<div class="plane-icon" style="transform:rotate(${(heading||0)-45}deg)">✈️</div>`,
+    className: '',
+    iconSize: [30, 30],
+    iconAnchor: [15, 15]
+  });
+}
+
+// ── OPENSKY API ───────────────────────────────────────────────────
+async function fetchFlight(callsign) {
+  // OpenSky Network free API — no key needed
+  // Returns all states, we filter by callsign
+  const cs = callsign.toUpperCase().padEnd(8, ' ');
+  const url = `https://opensky-network.org/api/states/all?time=0`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('API error');
+    const data = await res.json();
+
+    if (!data.states) return null;
+
+    // Find matching callsign
+    const match = data.states.find(s =>
+      s[1] && s[1].trim().toUpperCase() === callsign.trim().toUpperCase()
+    );
+
+    return match ? parseState(match) : null;
+
+  } catch(e) {
+    console.error(e);
+    return null;
+  }
+}
+
+function parseState(s) {
+  // OpenSky state vector format:
+  // [0]icao24, [1]callsign, [2]origin_country, [3]time_position,
+  // [4]last_contact, [5]longitude, [6]latitude, [7]baro_altitude,
+  // [8]on_ground, [9]velocity, [10]true_track, [11]vertical_rate,
+  // [12]sensors, [13]geo_altitude, [14]squawk, [15]spi, [16]position_source
+  return {
+    icao:        s[0],
+    callsign:    s[1]?.trim() || '—',
+    country:     s[2] || '—',
+    lat:         s[6],
+    lon:         s[5],
+    altitude:    s[7],  // metres baro
+    geoAlt:      s[13], // metres geo
+    onGround:    s[8],
+    speed:       s[9],  // m/s
+    heading:     s[10],
+    vertRate:    s[11], // m/s
+    lastContact: s[4],
+    squawk:      s[14] || '—',
+  };
+}
+
+// ── AIRLINE LOOKUP ─────────────────────────────────────────────────
+const AIRLINES = {
+  'ACA':'Air Canada','UAL':'United Airlines','DAL':'Delta Air Lines',
+  'BAW':'British Airways','AFR':'Air France','DLH':'Lufthansa',
+  'SWA':'Southwest Airlines','AAL':'American Airlines','EZY':'easyJet',
+  'RYR':'Ryanair','KLM':'KLM','IBE':'Iberia','THA':'Thai Airways',
+  'CPA':'Cathay Pacific','SIA':'Singapore Airlines','ETH':'Ethiopian Airlines',
+  'UAE':'Emirates','QTR':'Qatar Airways','MSR':'EgyptAir','FIN':'Finnair',
+  'TUI':'TUI Airways','WJA':'WestJet','QFA':'Qantas',
+};
+
+function getAirline(callsign) {
+  const prefix = callsign.replace(/[0-9]/g,'').substring(0,3).toUpperCase();
+  return AIRLINES[prefix] || 'Unknown Airline';
+}
+
+// ── SEARCH ────────────────────────────────────────────────────────
+async function searchFlight() {
+  const input = document.getElementById('flightInput').value.trim();
+  if (!input) return;
+
+  const btn = document.getElementById('searchBtn');
+  btn.disabled = true;
+  btn.textContent = '...';
+  currentCallsign = input.toUpperCase();
+
+  // Clear old refresh
+  if (refreshTimer) clearInterval(refreshTimer);
+  trailPoints = [];
+
+  showLoading();
+
+  const flight = await fetchFlight(currentCallsign);
+
+  btn.disabled = false;
+  btn.textContent = 'TRACK';
+
+  if (!flight) {
+    showNotFound(currentCallsign);
+    return;
+  }
+
+  updateDisplay(flight);
+
+  // Auto-refresh every 15 seconds
+  refreshTimer = setInterval(async () => {
+    const updated = await fetchFlight(currentCallsign);
+    if (updated) updateDisplay(updated);
+    document.getElementById('updateTime').textContent =
+      'UPDATED ' + new Date().toLocaleTimeString();
+  }, 15000);
+}
+
+// ── UPDATE DISPLAY ─────────────────────────────────────────────────
+function updateDisplay(f) {
+  document.getElementById('updateTime').textContent =
+    'UPDATED ' + new Date().toLocaleTimeString();
+
+  // Add to trail
+  if (f.lat && f.lon) {
+    trailPoints.push([f.lat, f.lon]);
+    if (trailPoints.length > 60) trailPoints.shift();
+  }
+
+  // Update map
+  updateMap(f);
+
+  // Update sidebar
+  document.getElementById('flightInfo').innerHTML = buildInfoHTML(f);
+}
+
+function buildInfoHTML(f) {
+  const airline    = getAirline(f.callsign);
+  const altFt      = f.altitude ? mToFt(f.altitude) : '—';
+  const altM       = f.altitude ? mToKm(f.altitude)+'km' : '—';
+  const spdKmh     = f.speed ? msToKmh(f.speed) : '—';
+  const hdg        = f.heading ? Math.round(f.heading)+'°' : '—';
+  const compass    = f.heading ? degToCompass(f.heading) : '—';
+  const vRate      = f.vertRate ? (f.vertRate > 0 ? '▲ ' : '▼ ') + Math.abs(Math.round(f.vertRate*60))+'m/min' : '—';
+  const status     = f.onGround ? 'ON GROUND' : 'AIRBORNE';
+  const statusCol  = f.onGround ? 'var(--yellow)' : 'var(--green)';
+  const lat        = formatCoord(f.lat, 'N', 'S');
+  const lon        = formatCoord(f.lon, 'E', 'W');
+
+  return `
+    <div class="status-card ${f.onGround?'landed':''}">
+      <div class="flight-number">${f.callsign}</div>
+      <div class="airline-name">${airline} · ${f.country}</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="font-size:11px;font-weight:700;color:${statusCol};letter-spacing:2px;font-family:'IBM Plex Mono',monospace">${status}</span>
+        ${!f.onGround ? '<span style="font-size:10px;color:var(--dim);font-family:\'IBM Plex Mono\',monospace">· ICAO: '+f.icao+'</span>' : ''}
+      </div>
+    </div>
+
+    ${!f.onGround ? `<div class="live-badge"><div class="live-dot"></div> LIVE TRACKING</div>` : ''}
+
+    <div class="stats-grid">
+      <div class="stat-box">
+        <div class="stat-label">Altitude</div>
+        <div class="stat-value">${altFt}<span class="stat-unit">ft</span></div>
+        <div style="font-size:10px;color:var(--dim);margin-top:3px;font-family:'IBM Plex Mono',monospace">${altM}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Ground Speed</div>
+        <div class="stat-value">${spdKmh}<span class="stat-unit">km/h</span></div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Heading</div>
+        <div class="stat-value">${hdg}</div>
+        <div style="font-size:10px;color:var(--dim);margin-top:3px;font-family:'IBM Plex Mono',monospace">${compass}</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Vertical Rate</div>
+        <div class="stat-value" style="font-size:13px">${vRate}</div>
+      </div>
+    </div>
+
+    <div class="pos-section">
+      <div class="pos-row"><span class="pos-key">Latitude</span><span class="pos-val">${lat}</span></div>
+      <div class="pos-row"><span class="pos-key">Longitude</span><span class="pos-val">${lon}</span></div>
+      <div class="pos-row"><span class="pos-key">Squawk</span><span class="pos-val">${f.squawk}</span></div>
+      <div class="pos-row"><span class="pos-key">Country</span><span class="pos-val">${f.country}</span></div>
+    </div>
+
+    <div style="padding:0 22px 16px">
+      <div style="font-size:10px;color:var(--dim);letter-spacing:1px;line-height:1.8">
+        Data from OpenSky Network · Updated every 15 seconds<br>
+        Note: Some flights may not be visible depending on coverage.
+      </div>
+    </div>
+  `;
+}
+
+function updateMap(f) {
+  if (!f.lat || !f.lon) return;
+  const pos = [f.lat, f.lon];
+
+  // Move or create plane marker
+  if (planeMarker) {
+    planeMarker.setLatLng(pos);
+    planeMarker.setIcon(planeIcon(f.heading || 0));
+  } else {
+    planeMarker = L.marker(pos, { icon: planeIcon(f.heading || 0) }).addTo(map);
+    map.setView(pos, 6);
+  }
+
+  planeMarker.bindPopup(`
+    <b>${f.callsign}</b><br>
+    ${getAirline(f.callsign)}<br>
+    Alt: ${f.altitude ? mToFt(f.altitude)+'ft' : '—'}<br>
+    Speed: ${f.speed ? msToKmh(f.speed)+'km/h' : '—'}
+  `);
+
+  // Trail line
+  if (trailPoints.length > 1) {
+    if (trailLine) map.removeLayer(trailLine);
+    trailLine = L.polyline(trailPoints, {
+      color: '#63b3ed',
+      weight: 2,
+      opacity: 0.5,
+      dashArray: '4 6'
+    }).addTo(map);
+  }
+
+  map.panTo(pos, { animate: true, duration: 1 });
+}
+
+// ── STATES ────────────────────────────────────────────────────────
+function showLoading() {
+  document.getElementById('flightInfo').innerHTML = `
+    <div class="state-msg">
+      <div class="state-icon">🔍</div>
+      <div class="state-title">Searching OpenSky...</div>
+      <div class="state-sub">Scanning live aircraft data for ${currentCallsign}</div>
+    </div>`;
+}
+
+function showNotFound(cs) {
+  document.getElementById('flightInfo').innerHTML = `
+    <div class="state-msg">
+      <div class="state-icon">🚫</div>
+      <div class="state-title">Flight not found</div>
+      <div class="state-sub">
+        <b>${cs}</b> is not currently tracked.<br><br>
+        This could mean:<br>
+        · Flight has landed<br>
+        · Outside OpenSky coverage<br>
+        · Try the ICAO callsign format<br><br>
+        Try one of the example flights above.
+      </div>
+    </div>`;
+}
+
+// ── ALSO: show ALL live flights in view ───────────────────────────
+async function loadNearbyFlights() {
+  // Show a sample of live flights on map as dots
+  try {
+    const res = await fetch('https://opensky-network.org/api/states/all?lamin=30&lomin=-130&lamax=65&lomax=40');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.states) return;
+
+    // Show up to 100 planes as small dots
+    data.states.slice(0, 100).forEach(s => {
+      if (!s[6] || !s[5] || s[8]) return; // skip if no pos or on ground
+      const dotIcon = L.divIcon({
+        html: `<div style="width:5px;height:5px;border-radius:50%;background:rgba(99,179,237,0.4);border:1px solid rgba(99,179,237,0.6)"></div>`,
+        className: '', iconSize:[5,5], iconAnchor:[2.5,2.5]
+      });
+      L.marker([s[6],s[5]], { icon: dotIcon })
+        .bindTooltip(s[1]?.trim()||s[0], { permanent:false, direction:'top' })
+        .addTo(map);
+    });
+  } catch(e) { /* silent fail */ }
+}
+
+// Load background flights
+loadNearbyFlights();
+
+// Enter key
+document.getElementById('flightInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') searchFlight();
+});
+</script>
+</body>
+</html>
